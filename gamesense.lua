@@ -21,7 +21,9 @@ getgenv().GameSenseActive = true
 getgenv().GameSenseUser = player.Name
 
 local themes = {
-	Default = { bg = Color3.fromRGB(20,20,20), panel = Color3.fromRGB(26,26,26), section = Color3.fromRGB(32,32,32), green = Color3.fromRGB(145,200,60), text = Color3.fromRGB(230,230,230), muted = Color3.fromRGB(145,145,145), border = Color3.fromRGB(48,48,48), off = Color3.fromRGB(57,57,57) },
+	Default = { bg = Color3.fromRGB(18,18,22), panel = Color3.fromRGB(24,24,30), section = Color3.fromRGB(30,30,38), green = Color3.fromRGB(145,200,60), text = Color3.fromRGB(235,235,240), muted = Color3.fromRGB(140,140,150), border = Color3.fromRGB(50,50,60), off = Color3.fromRGB(55,55,65) },
+	Clean = { bg = Color3.fromRGB(22,22,26), panel = Color3.fromRGB(30,30,36), section = Color3.fromRGB(38,38,46), green = Color3.fromRGB(100,210,140), text = Color3.fromRGB(245,245,250), muted = Color3.fromRGB(150,150,160), border = Color3.fromRGB(55,55,65), off = Color3.fromRGB(60,60,70) },
+	Midnight = { bg = Color3.fromRGB(8,10,16), panel = Color3.fromRGB(14,16,24), section = Color3.fromRGB(20,22,32), green = Color3.fromRGB(90,170,255), text = Color3.fromRGB(230,235,245), muted = Color3.fromRGB(120,130,150), border = Color3.fromRGB(35,40,55), off = Color3.fromRGB(40,45,60) },
 	Dark = { bg = Color3.fromRGB(12,12,12), panel = Color3.fromRGB(18,18,18), section = Color3.fromRGB(24,24,24), green = Color3.fromRGB(0,200,120), text = Color3.fromRGB(240,240,240), muted = Color3.fromRGB(120,120,120), border = Color3.fromRGB(40,40,40), off = Color3.fromRGB(45,45,45) },
 	Blue = { bg = Color3.fromRGB(15,18,25), panel = Color3.fromRGB(20,25,35), section = Color3.fromRGB(25,30,42), green = Color3.fromRGB(80,160,255), text = Color3.fromRGB(230,235,245), muted = Color3.fromRGB(130,140,160), border = Color3.fromRGB(40,50,70), off = Color3.fromRGB(40,50,65) },
 	Purple = { bg = Color3.fromRGB(18,12,22), panel = Color3.fromRGB(25,18,32), section = Color3.fromRGB(32,24,42), green = Color3.fromRGB(180,80,255), text = Color3.fromRGB(235,230,245), muted = Color3.fromRGB(140,130,155), border = Color3.fromRGB(50,40,65), off = Color3.fromRGB(45,35,55) },
@@ -51,6 +53,7 @@ Screen.IgnoreGuiInset = true
 Screen.DisplayOrder = 999
 Screen.Parent = parent
 
+local State = {}
 local S = {
 	visualsEnabled = false, showBoxes = false, showNames = false, showHealth = false,
 	showSkeleton = false, showTargetInfo = false, showAimView = false,
@@ -97,6 +100,7 @@ local S = {
 	lang = "ru", -- ru / en
 	relationship = 0, -- 0..100 близость
 	aiKey = "",
+
 	fpsWarn = 30,
 	pingWarn = 150,
 }
@@ -109,9 +113,10 @@ local refreshBind = {}
 local toggleControllers = {}
 local sliderControllers = {}
 local refreshPetNameBox = nil
+State.lastYaw = 0
 local lastYaw = 0
-local petArousal, petGrowth = 0, 0
-local stompCount, lastKillTime, killStreak, lastInsertTime = 0, 0, 0, 0
+State.petArousal, State.petGrowth = 0, 0
+State.stompCount, State.lastKillTime, State.killStreak, State.lastInsertTime = 0, 0, 0, 0
 local INSERT_CD = 1.4
 local petStats = { pats = 0, feeds = 0, inserts = 0, kills = 0, stomps = 0 }
 local refreshAchieveList, applyPetScale, addGrowth, unlockAch = nil, nil, nil, nil
@@ -129,10 +134,10 @@ local petAchievements = {
 	{id="kill_say", name="Комментатор", desc="кот на килл", done=false},
 	{id="streak_5", name="Серия x5", desc="kill streak 5", done=false},
 }
-local petSleeping, miniGameActive = false, false
-local lastHpWarn, lastFpsWarn, lastPingWarn = 0, 0, 0
-local aHeld, dHeld = false, false
-local holdingFood, holdingMilk, holdingEggplant, holdingBanana = false, false, false, false
+State.petSleeping, State.miniGameActive = false, false
+State.lastHpWarn, State.lastFpsWarn, State.lastPingWarn = 0, 0, 0
+State.aHeld, State.dHeld = false, false
+State.holdingFood, State.holdingMilk, State.holdingEggplant, State.holdingBanana = false, false, false, false
 local cursorItem, clearHolding = nil, nil
 
 local function applyFontToAll()
@@ -147,11 +152,11 @@ end
 
 -- ================= ACHIEVEMENT =================
 local achievementQueue = {}
-local isShowingAchievement = false
+State.isShowingAchievement = false
 
 local function processQueue()
-	if isShowingAchievement or #achievementQueue == 0 then return end
-	isShowingAchievement = true
+	if State.isShowingAchievement or #achievementQueue == 0 then return end
+	State.isShowingAchievement = true
 	local data = table.remove(achievementQueue, 1)
 	local title, description = data[1], data[2]
 
@@ -219,7 +224,7 @@ local function processQueue()
 		out:Play()
 		out.Completed:Wait()
 		notif:Destroy()
-		isShowingAchievement = false
+		State.isShowingAchievement = false
 		processQueue()
 	end)
 end
@@ -357,23 +362,46 @@ thirstBar.BorderSizePixel = 0
 thirstBar.ZIndex = 405
 Instance.new("UICorner", thirstBar).CornerRadius = UDim.new(1, 0)
 
+-- полоска сквирта (розовая)
+local squirtBarBg = Instance.new("Frame")
+squirtBarBg.Parent = Pet
+squirtBarBg.Size = UDim2.fromOffset(56, 5)
+squirtBarBg.Position = UDim2.fromOffset(17, 74)
+squirtBarBg.BackgroundColor3 = Color3.fromRGB(40, 15, 30)
+squirtBarBg.BorderSizePixel = 0
+squirtBarBg.ZIndex = 404
+Instance.new("UICorner", squirtBarBg).CornerRadius = UDim.new(1, 0)
+local squirtBar = Instance.new("Frame")
+squirtBar.Parent = squirtBarBg
+squirtBar.Size = UDim2.fromScale(0, 1)
+squirtBar.BackgroundColor3 = Color3.fromRGB(255, 120, 180)
+squirtBar.BorderSizePixel = 0
+squirtBar.ZIndex = 405
+Instance.new("UICorner", squirtBar).CornerRadius = UDim.new(1, 0)
+
 local petTarget = UDim2.fromOffset(180, 280)
-local petSitting = false
-local lastPetComment = 0
-local petDragging = false
-local petMoved = false
+State.lastPatTime = tick()
+State.petSayToken = 0
+State.petSitting = false
+State.lastPetComment = 0
+State.petDragging = false
+State.petMoved = false
 local petDragStart, petStartPos = nil, nil
 
-local function petSay(text)
+local function petSay(text, holdSec)
 	if not text or text == "" then return end
+	holdSec = holdSec or 3.2
+	State.petSayToken = State.petSayToken + 1
+	local myTok = State.petSayToken
 	petBubble.Text = text
 	petBubbleFrame.Visible = true
-	-- подгон ширины под текст
-	local len = math.clamp(#tostring(text) * 8 + 20, 80, 180)
-	petBubbleFrame.Size = UDim2.fromOffset(len, 36)
-	petBubbleFrame.Position = UDim2.fromOffset(math.floor((90 - len) / 2), -42)
-	task.delay(3.2, function()
-		if petBubble.Text == text then
+	local len = math.clamp(#tostring(text) * 8 + 24, 90, 220)
+	local h = (#tostring(text) > 28) and 48 or 36
+	petBubbleFrame.Size = UDim2.fromOffset(len, h)
+	local pw = Pet.AbsoluteSize.X > 0 and Pet.AbsoluteSize.X or 90
+	petBubbleFrame.Position = UDim2.fromOffset(math.floor((pw - len) / 2), -h - 6)
+	task.delay(holdSec, function()
+		if myTok == State.petSayToken and petBubble.Text == text then
 			petBubble.Text = ""
 			petBubbleFrame.Visible = false
 		end
@@ -463,6 +491,10 @@ local function updatePetVisuals()
 	S.petAccessory = "None"
 	hungerBar.Size = UDim2.fromScale(math.clamp(S.petHunger / 100, 0, 1), 1)
 	thirstBar.Size = UDim2.fromScale(math.clamp(S.petThirst / 100, 0, 1), 1)
+	if squirtBar then
+		squirtBar.Size = UDim2.fromScale(math.clamp(State.petArousal / 100, 0, 1), 1)
+		squirtBar.BackgroundColor3 = State.petArousal >= 90 and Color3.fromRGB(255, 80, 140) or Color3.fromRGB(255, 120, 180)
+	end
 	hungerBar.BackgroundColor3 = S.petHunger < 25 and Color3.fromRGB(255, 60, 60) or Color3.fromRGB(255, 160, 50)
 	thirstBar.BackgroundColor3 = S.petThirst < 25 and Color3.fromRGB(255, 60, 60) or Color3.fromRGB(80, 180, 255)
 end
@@ -512,7 +544,7 @@ unlockAch = function(id)
 end
 
 applyPetScale = function()
-	local t = math.clamp(petGrowth / 100, 0, 1)
+	local t = math.clamp(State.petGrowth / 100, 0, 1)
 	local w = math.floor(90 + t * 55)
 	local h = math.floor(110 + t * 65)
 	Pet.Size = UDim2.fromOffset(w, h)
@@ -539,6 +571,10 @@ applyPetScale = function()
 		thirstBarBg.Size = UDim2.fromOffset(barW, 5)
 		thirstBarBg.Position = UDim2.fromOffset(math.floor((w - barW) / 2), h - 24)
 	end
+	if squirtBarBg then
+		squirtBarBg.Size = UDim2.fromOffset(barW, 5)
+		squirtBarBg.Position = UDim2.fromOffset(math.floor((w - barW) / 2), h - 36)
+	end
 	if petBubbleFrame then
 		petBubbleFrame.Position = UDim2.fromOffset(math.floor((w - 140) / 2), -40)
 	end
@@ -546,12 +582,12 @@ applyPetScale = function()
 end
 
 addGrowth = function(amount)
-	local old = petGrowth
-	petGrowth = math.min(100, petGrowth + amount)
+	local old = State.petGrowth
+	State.petGrowth = math.min(100, State.petGrowth + amount)
 	applyPetScale()
-	if old < 25 and petGrowth >= 25 then unlockAch("growth_25") end
-	if old < 50 and petGrowth >= 50 then unlockAch("growth_50") end
-	if old < 100 and petGrowth >= 100 then unlockAch("growth_100") end
+	if old < 25 and State.petGrowth >= 25 then unlockAch("growth_25") end
+	if old < 50 and State.petGrowth >= 50 then unlockAch("growth_50") end
+	if old < 100 and State.petGrowth >= 100 then unlockAch("growth_100") end
 end
 
 -- ===== relationship helpers =====
@@ -560,8 +596,8 @@ local function addRelationship(n)
 end
 
 local function startMiniGame()
-	if miniGameActive or not S.petEnabled then return end
-	miniGameActive = true
+	if State.miniGameActive or not S.petEnabled then return end
+	State.miniGameActive = true
 	petSay(S.lang == "en" and "catch me!" or "поймай!")
 	local ball = Instance.new("TextButton")
 	ball.Parent = Screen
@@ -588,7 +624,7 @@ local function startMiniGame()
 	local function finish(win)
 		if done then return end
 		done = true
-		miniGameActive = false
+		State.miniGameActive = false
 		if conn then conn:Disconnect() end
 		ball:Destroy()
 		if win then
@@ -605,62 +641,9 @@ local function startMiniGame()
 end
 
 local function askPetAI(prompt)
-	prompt = tostring(prompt or "")
-	if S.aiKey and S.aiKey ~= "" and #S.aiKey > 8 then
-		petSay(S.lang == "en" and "thinking..." or "думаю...")
-		task.spawn(function()
-			local body = HttpService:JSONEncode({
-				model = "deepseek-chat",
-				messages = {
-					{role = "system", content = "You are a cute cat pet named "..(S.petName or "Kitty")..". Reply in 1 short sentence. Language: "..(S.lang == "en" and "English" or "Russian")..". Gender style: "..(S.petGender or "Female")},
-					{role = "user", content = prompt}
-				},
-				max_tokens = 60,
-				temperature = 0.9,
-			})
-			local ok, res = pcall(function()
-				if syn and syn.request then
-					return syn.request({Url = "https://api.deepseek.com/chat/completions", Method = "POST", Headers = {["Content-Type"] = "application/json", ["Authorization"] = "Bearer "..S.aiKey}, Body = body})
-				elseif request then
-					return request({Url = "https://api.deepseek.com/chat/completions", Method = "POST", Headers = {["Content-Type"] = "application/json", ["Authorization"] = "Bearer "..S.aiKey}, Body = body})
-				elseif http_request then
-					return http_request({Url = "https://api.deepseek.com/chat/completions", Method = "POST", Headers = {["Content-Type"] = "application/json", ["Authorization"] = "Bearer "..S.aiKey}, Body = body})
-				end
-				return nil
-			end)
-			if ok and res and res.Body then
-				local ok2, data = pcall(function() return HttpService:JSONDecode(res.Body) end)
-				if ok2 and data and data.choices and data.choices[1] and data.choices[1].message then
-					petSay(tostring(data.choices[1].message.content):sub(1, 80))
-					return
-				end
-			end
-			-- fallback local
-			local locals = S.lang == "en" and {"meow, i like you", "watching you play", "pat me more"} or {"мяу, ты крутой", "слежу за тобой", "погладь ещё"}
-			petSay(locals[math.random(1, #locals)])
-		end)
-	else
-		local locals = S.lang == "en" and {"no api key~", "set deepseek key in Pet", "meow anyway"} or {"нет ключа API~", "вставь ключ DeepSeek в Pet", "мяу и так"}
-		petSay(locals[math.random(1, #locals)])
-	end
+	petSay(S.lang == "en" and "ai removed" or "AI убран")
 end
 
--- HP reaction
-task.spawn(function()
-	while Screen.Parent do
-		task.wait(0.8)
-		if S.petEnabled and not petSleeping then
-			local char = player.Character
-			local hum = char and char:FindFirstChildOfClass("Humanoid")
-			if hum and hum.Health > 0 and hum.Health / math.max(hum.MaxHealth, 1) < 0.28 then
-				if tick() - lastHpWarn > 6 then
-					lastHpWarn = tick()
-					petSay(S.lang == "en" and "low hp! careful!" or "мало хп! осторожнее!")
-				end
-			end
-		end
-	end
-end)
 
 local function spawnPatWords()
 	for i = 1, math.random(3, 6) do
@@ -691,7 +674,7 @@ local function spawnSplash()
 	-- капли снизу кота, летят вниз/в стороны
 	local px = Pet.AbsolutePosition.X + Pet.AbsoluteSize.X / 2
 	local py = Pet.AbsolutePosition.Y + Pet.AbsoluteSize.Y - 8
-	local count = math.random(5, 9) + math.floor(petArousal / 20)
+	local count = math.random(5, 9) + math.floor(State.petArousal / 20)
 	for i = 1, count do
 		local t = Instance.new("TextLabel")
 		t.Parent = Screen
@@ -715,8 +698,8 @@ local function spawnSplash()
 end
 
 -- сквирт: белые капли сверху (10%=1 ... 100%=ливень на весь экран)
-local lastSquirtTier = 0
-local squirtBusy = false
+State.lastSquirtTier = 0
+State.squirtBusy = false
 local SQUIRT_DROPS = {
 	[10] = 1, [20] = 2, [30] = 4, [40] = 6, [50] = 8,
 	[60] = 12, [70] = 16, [80] = 24, [90] = 40, [100] = 0,
@@ -754,8 +737,8 @@ local function spawnTopDrops(count)
 end
 
 local function fullScreenSquirt()
-	if squirtBusy then return end
-	squirtBusy = true
+	if State.squirtBusy then return end
+	State.squirtBusy = true
 	local vp = camera.ViewportSize
 	local veil = Instance.new("Frame")
 	veil.Name = "SquirtVeil"
@@ -781,7 +764,7 @@ local function fullScreenSquirt()
 			task.delay(1.9, function() if d and d.Parent then d:Destroy() end end)
 		end)
 	end
-	petSay(S.lang == "en" and "thank you :3 💋" or "спасибо тебе. :3 💋")
+	petSay(S.lang == "en" and "thank you :3 💋" or "спасибо тебе. :3 💋", 7.5)
 	-- поцелуй на весь экран
 	task.delay(0.55, function()
 		if not Screen or not Screen.Parent then return end
@@ -846,16 +829,16 @@ local function fullScreenSquirt()
 			TweenService:Create(veil, TweenInfo.new(0.7), {BackgroundTransparency = 1}):Play()
 			task.delay(0.8, function() if veil and veil.Parent then veil:Destroy() end end)
 		end
-		petArousal = 15
-		lastSquirtTier = 0
-		squirtBusy = false
+		State.petArousal = 15
+		State.lastSquirtTier = 0
+		State.squirtBusy = false
 	end)
 end
 
 local function triggerSquirtEffects(oldA, newA)
 	for thr = 10, 100, 10 do
-		if oldA < thr and newA >= thr and thr > lastSquirtTier then
-			lastSquirtTier = thr
+		if oldA < thr and newA >= thr and thr > State.lastSquirtTier then
+			State.lastSquirtTier = thr
 			pcall(function() petSay(getMoan()) end)
 			if thr >= 100 then
 				fullScreenSquirt()
@@ -888,7 +871,7 @@ local eggplantMoans = {
 local function getMoan()
 	local g = S.petGender or "Female"
 	local pack = eggplantMoans[g] or eggplantMoans.Female
-	local tier = petArousal >= 70 and "high" or (petArousal >= 35 and "mid" or "low")
+	local tier = State.petArousal >= 70 and "high" or (State.petArousal >= 35 and "mid" or "low")
 	local list = pack[tier]
 	return list[math.random(1, #list)]
 end
@@ -897,8 +880,28 @@ end
 task.spawn(function()
 	while Screen.Parent do
 		task.wait(2.5)
-		if petArousal > 0 then
-			petArousal = math.max(0, petArousal - 3)
+		if State.petArousal > 0 then
+			State.petArousal = math.max(0, State.petArousal - 3)
+		end
+	end
+end)
+
+-- ревность: долго не гладил
+task.spawn(function()
+	while Screen.Parent do
+		task.wait(12)
+		if S.petEnabled and not State.petSleeping then
+			local idle = tick() - (State.lastPatTime or tick())
+			if idle > 75 and tick() - State.lastPetComment > 14 then
+				State.lastPetComment = tick()
+				local lines = S.lang == "en" and {"hey... ignore me?", "pat me already", "jealous...", "where are you?"}
+					or {"эй... забыл меня?", "погладь уже", "я ревную...", "куда пропал?"}
+				petSay(lines[math.random(1, #lines)], 4)
+				S.relationship = math.max(0, (S.relationship or 0) - 1)
+			end
+		end
+		if S.petEnabled then
+			pcall(updatePetVisuals)
 		end
 	end
 end)
@@ -908,20 +911,20 @@ local function resetPetFace()
 		petFace.Text = "🐱"
 		petFace.Rotation = 0
 	end
-	petSitting = false
+	State.petSitting = false
 	pcall(updatePetVisuals)
 end
 
 local function doPat()
 	if not S.petEnabled then return end
-	if petSleeping then
+	if State.petSleeping then
 		petSay(S.lang == "en" and "zzz..." or "хрр...")
 		return
 	end
 	-- 🍆/🍌 обрабатываем даже если "сидит" (анти-зависание)
-	local isInsert = holdingEggplant or holdingBanana
-	if petSitting and not isInsert and not holdingFood and not holdingMilk then return end
-	if holdingFood then
+	local isInsert = State.holdingEggplant or State.holdingBanana
+	if State.petSitting and not isInsert and not State.holdingFood and not State.holdingMilk then return end
+	if State.holdingFood then
 		S.petHunger = math.min(100, S.petHunger + 35)
 		updatePetVisuals()
 		local st = getSpeechStyle()
@@ -934,7 +937,7 @@ local function doPat()
 		unlockAch("first_feed")
 		return
 	end
-	if holdingMilk then
+	if State.holdingMilk then
 		S.petThirst = math.min(100, S.petThirst + 40)
 		updatePetVisuals()
 		local st = getSpeechStyle()
@@ -946,20 +949,20 @@ local function doPat()
 		unlockAch("first_feed")
 		return
 	end
-	if holdingEggplant or holdingBanana then
-		if tick() - lastInsertTime < INSERT_CD then
+	if State.holdingEggplant or State.holdingBanana then
+		if tick() - State.lastInsertTime < INSERT_CD then
 			return
 		end
-		lastInsertTime = tick()
+		State.lastInsertTime = tick()
 		-- сразу планируем сброс морды (даже если дальше ошибка)
 		task.delay(0.9, resetPetFace)
-		local oldA = petArousal
-		petArousal = math.min(100, petArousal + 12 + math.random(0, 8))
+		local oldA = State.petArousal
+		State.petArousal = math.min(100, State.petArousal + 12 + math.random(0, 8))
 		petStats.inserts = petStats.inserts + 1
 		pcall(function() addGrowth(2.5) end)
 		pcall(function() unlockAch("first_insert") end)
 		if petStats.inserts >= 25 then pcall(function() unlockAch("insert_25") end) end
-		petSitting = true
+		State.petSitting = true
 		if petFace then
 			petFace.Text = "🐈"
 			petFace.Rotation = 0
@@ -968,13 +971,13 @@ local function doPat()
 		pcall(playPatSound)
 		pcall(spawnSplash)
 		pcall(function() petSay(getMoan()) end)
-		pcall(function() triggerSquirtEffects(oldA, petArousal) end)
+		pcall(function() triggerSquirtEffects(oldA, State.petArousal) end)
 		task.delay(0.35, function()
 			pcall(spawnSplash)
 		end)
 		task.delay(1.0, function()
 			resetPetFace()
-			if petArousal >= 80 and petArousal < 100 and math.random() < 0.3 then
+			if State.petArousal >= 80 and State.petArousal < 100 and math.random() < 0.3 then
 				task.delay(0.3, function()
 					if S.petEnabled then petSay("хн... подожди...") end
 				end)
@@ -982,7 +985,7 @@ local function doPat()
 		end)
 		return
 	end
-	petSitting = true
+	State.petSitting = true
 	if petFace then
 		petFace.Text = "🐈"
 		petFace.Rotation = 0
@@ -1005,18 +1008,18 @@ end
 
 Pet.InputBegan:Connect(function(input)
 	if input.UserInputType == Enum.UserInputType.MouseButton1 then
-		petDragging = true
-		petMoved = false
+		State.petDragging = true
+		State.petMoved = false
 		petDragStart = input.Position
 		petStartPos = Pet.Position
 	end
 end)
 
 UIS.InputChanged:Connect(function(input)
-	if petDragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+	if State.petDragging and input.UserInputType == Enum.UserInputType.MouseMovement then
 		local d = input.Position - petDragStart
 		if d.Magnitude > 7 then
-			petMoved = true
+			State.petMoved = true
 			Pet.Position = UDim2.fromOffset(petStartPos.X.Offset + d.X, petStartPos.Y.Offset + d.Y)
 			petTarget = Pet.Position
 		end
@@ -1024,28 +1027,28 @@ UIS.InputChanged:Connect(function(input)
 end)
 
 UIS.InputEnded:Connect(function(input)
-	if input.UserInputType == Enum.UserInputType.MouseButton1 and petDragging then
-		petDragging = false
-		if not petMoved then doPat() end
+	if input.UserInputType == Enum.UserInputType.MouseButton1 and State.petDragging then
+		State.petDragging = false
+		if not State.petMoved then doPat() end
 	end
 end)
 
 
 -- предметы на курсоре
 clearHolding = function()
-	holdingFood = false
-	holdingMilk = false
-	holdingEggplant = false
-	holdingBanana = false
+	State.holdingFood = false
+	State.holdingMilk = false
+	State.holdingEggplant = false
+	State.holdingBanana = false
 	if cursorItem then cursorItem:Destroy() cursorItem = nil end
 end
 
 local function startHolding(kind)
 	clearHolding()
-	holdingFood = (kind == "food")
-	holdingMilk = (kind == "milk")
-	holdingEggplant = (kind == "eggplant")
-	holdingBanana = (kind == "banana")
+	State.holdingFood = (kind == "food")
+	State.holdingMilk = (kind == "milk")
+	State.holdingEggplant = (kind == "eggplant")
+	State.holdingBanana = (kind == "banana")
 	local icons = { food = "🍖", milk = "🥛", eggplant = "🍆", banana = "🍌" }
 	local reacts = { food = "еда?!", milk = "молочко?!", eggplant = "э-эй...!", banana = "б-банан?.." }
 	cursorItem = Instance.new("TextLabel")
@@ -1077,12 +1080,12 @@ task.spawn(function()
 			S.petThirst = math.max(0, S.petThirst - 0.7)
 			updatePetVisuals()
 			local st = getSpeechStyle()
-			if S.petHunger < 15 and tick() - lastPetComment > 8 then
+			if S.petHunger < 15 and tick() - State.lastPetComment > 8 then
 				petSay(st.hungry[math.random(1, #st.hungry)])
-				lastPetComment = tick()
-			elseif S.petThirst < 15 and tick() - lastPetComment > 8 then
+				State.lastPetComment = tick()
+			elseif S.petThirst < 15 and tick() - State.lastPetComment > 8 then
 				petSay(st.thirsty[math.random(1, #st.thirsty)])
-				lastPetComment = tick()
+				State.lastPetComment = tick()
 			end
 		end
 	end
@@ -1093,7 +1096,7 @@ task.spawn(function()
 	while Screen.Parent do
 		if S.petEnabled then
 			Pet.Visible = true
-			if not petSitting and not S.petFrozen and not petDragging and not petSleeping then
+			if not State.petSitting and not S.petFrozen and not State.petDragging and not State.petSleeping then
 				if tick() - lastMove > math.random(2.2, 5.0) then
 					petTarget = randomPetPos()
 					lastMove = tick()
@@ -1118,10 +1121,10 @@ end)
 task.spawn(function()
 	while Screen.Parent do
 		task.wait(math.random(9, 16))
-		if S.petEnabled and not petSitting and tick() - lastPetComment > 6 then
+		if S.petEnabled and not State.petSitting and tick() - State.lastPetComment > 6 then
 			local st = getSpeechStyle()
 			petSay(st.idle[math.random(1, #st.idle)])
-			lastPetComment = tick()
+			State.lastPetComment = tick()
 		end
 	end
 end)
@@ -1156,37 +1159,37 @@ local function onSomeoneDied(victim)
 	end
 
 	-- kill streak
-	if tick() - lastKillTime < 8 then
-		killStreak = killStreak + 1
+	if tick() - State.lastKillTime < 8 then
+		State.killStreak = State.killStreak + 1
 	else
-		killStreak = 1
+		State.killStreak = 1
 	end
-	lastKillTime = tick()
+	State.lastKillTime = tick()
 
 	if isStomp then
-		stompCount = stompCount + 1
-		petStats.stomps = stompCount
-		showAchievement("Stomp!", (victim.DisplayName or victim.Name) .. " · #" .. tostring(stompCount))
+		State.stompCount = State.stompCount + 1
+		petStats.stomps = State.stompCount
+		showAchievement("Stomp!", (victim.DisplayName or victim.Name) .. " · #" .. tostring(State.stompCount))
 		unlockAch("first_stomp")
-		if stompCount >= 10 then unlockAch("stomp_10") end
+		if State.stompCount >= 10 then unlockAch("stomp_10") end
 		if S.petEnabled then
 			local g = S.petGender or "Female"
 			local list = stompSays[g] or stompSays.Female
 			petSay(list[math.random(1, #list)])
-			lastPetComment = tick()
+			State.lastPetComment = tick()
 		end
 		return
 	end
 
-	if S.petEnabled and tick() - lastPetComment >= 2.2 then
-		lastPetComment = tick()
+	if S.petEnabled and tick() - State.lastPetComment >= 2.2 then
+		State.lastPetComment = tick()
 		petStats.kills = petStats.kills + 1
 		unlockAch("kill_say")
-		if killStreak >= 5 then unlockAch("streak_5") end
+		if State.killStreak >= 5 then unlockAch("streak_5") end
 		local g = S.petGender or "Female"
 		local list = killSays[g] or killSays.Female
-		if killStreak >= 3 then
-			petSay("серия x" .. tostring(killStreak) .. "!")
+		if State.killStreak >= 3 then
+			petSay("серия x" .. tostring(State.killStreak) .. "!")
 		else
 			petSay(list[math.random(1, #list)])
 		end
@@ -1298,6 +1301,84 @@ end
 function API.ensureFolder()
 	pcall(function() if not isfolder("GameSenseConfigs") then makefolder("GameSenseConfigs") end end)
 end
+
+-- привязка конфигов к аккаунту (UserId)
+local OWNER_FILE = "GameSenseConfigs/owner.txt"
+function API.getSavedOwner()
+	local ok, c = pcall(function()
+		if isfile(OWNER_FILE) then return readfile(OWNER_FILE) end
+	end)
+	if ok and c and c ~= "" then return tostring(c):gsub("%s+", "") end
+	return nil
+end
+function API.setSavedOwner(uid)
+	API.ensureFolder()
+	pcall(function() writefile(OWNER_FILE, tostring(uid)) end)
+end
+function API.isSameAccount()
+	local saved = API.getSavedOwner()
+	if not saved then return false end
+	return saved == tostring(player.UserId)
+end
+function API.bindAccountOrReset()
+	-- saved: "UserId|Name"
+	local saved = API.getSavedOwner()
+	local meId = tostring(player.UserId)
+	local meName = tostring(player.Name)
+	local meTag = meId .. "|" .. meName
+
+	local function parseOwner(s)
+		if not s then return nil, nil end
+		local id, name = string.match(s, "^(%d+)|(.+)$")
+		if id then return id, name end
+		-- старый формат — только id
+		if string.match(s, "^%d+$") then return s, nil end
+		return nil, s -- только ник
+	end
+
+	local sid, sname = parseOwner(saved)
+	local same = false
+	if sid and sid == meId then
+		same = true
+	elseif sname and string.lower(sname) == string.lower(meName) and not sid then
+		same = true
+	end
+
+	if saved and not same then
+		-- ЧУЖОЙ НИК / АКК: снести auto-load и не тянуть настройки
+		pcall(function()
+			if isfile("GameSenseConfigs/autoload.txt") then delfile("GameSenseConfigs/autoload.txt") end
+		end)
+		-- сброс флагов в S на дефолт (кнопки выкл)
+		local defaults = {
+			visualsEnabled=false, showBoxes=false, showNames=false, showHealth=false,
+			showSkeleton=false, showTargetInfo=false, showAimView=false,
+			bhopEnabled=false, rageBhop=false, autoStrafeEnabled=false,
+			walkSpeedEnabled=false, triggerBotEnabled=false, aaEnabled=false,
+			targetStrafeEnabled=false, teleportAA=false, multiPoint=false,
+			showFov=false, aimModeToggle=false, resolverEnabled=false,
+		}
+		for k, v in pairs(defaults) do
+			S[k] = v
+		end
+		S.walkSpeedValue = 16
+		S.liveSpeed = 16
+		S.isAiming = false
+		S.lockedTarget = nil
+		S.lockedUserId = nil
+		pcall(function()
+			if syncSToUI then syncSToUI() end
+		end)
+		-- записать уже нового владельца (этот ник)
+		API.setSavedOwner(meTag)
+		return false
+	end
+
+	-- первый запуск или тот же акк
+	API.setSavedOwner(meTag)
+	return true
+end
+
 function API.keyToString(k)
 	return typeof(k) == "EnumItem" and k.Name or "None"
 end
@@ -1438,71 +1519,127 @@ RunService.Heartbeat:Connect(function(dt)
 	end
 	local char = player.Character
 	local hum = char and char:FindFirstChildOfClass("Humanoid")
-	if hum then
+	if hum and hum.Health > 0 then
 		if S.walkSpeedEnabled then
-			local cap = math.clamp(S.walkSpeedValue, 16, 1000)
-			if S.walkSpeedHeld then
-				S.liveSpeed = math.min(cap, S.liveSpeed + S.walkRamp * dt)
-			else
-				S.liveSpeed = math.max(16, S.liveSpeed - S.walkRamp * 1.8 * dt)
+			-- починить бинд если после cfg стал строкой
+			local bind = S.walkSpeedBind
+			if type(bind) == "string" then
+				local key = Enum.KeyCode[bind]
+				if key then
+					bind = key
+					S.walkSpeedBind = key
+				end
 			end
-			hum.WalkSpeed = S.liveSpeed
+			-- hold: InputBegan + IsKeyDown (надёжнее)
+			local held = S.walkSpeedHeld
+			pcall(function()
+				if bind then held = UIS:IsKeyDown(bind) or held end
+			end)
+			local cap = math.clamp(tonumber(S.walkSpeedValue) or 16, 16, 1000)
+			local ramp = math.max(1, tonumber(S.walkRamp) or 120)
+			local cur = tonumber(S.liveSpeed) or 16
+			if held then
+				S.liveSpeed = math.min(cap, cur + ramp * dt)
+			else
+				S.liveSpeed = math.max(16, cur - ramp * 1.8 * dt)
+			end
+			pcall(function() hum.WalkSpeed = S.liveSpeed end)
 		else
 			S.liveSpeed = 16
-			if hum.WalkSpeed ~= 16 then hum.WalkSpeed = 16 end
+			S.walkSpeedHeld = false
+			pcall(function()
+				if hum.WalkSpeed ~= 16 then hum.WalkSpeed = 16 end
+			end)
 		end
 	end
 end)
 
--- ================= BHOP =================
 local function setupBhop()
 	if bhopConn then pcall(function() bhopConn:Disconnect() end) bhopConn = nil end
 	if not S.bhopEnabled and not S.rageBhop and not S.autoStrafeEnabled then return end
-	lastYaw = API.getCamYaw()
-	aHeld, dHeld = false, false
-	bhopConn = RunService.RenderStepped:Connect(function()
+	if type(lastYaw) ~= "number" then lastYaw = 0 end
+	pcall(function() lastYaw = API.getCamYaw() end)
+	State.aHeld, State.dHeld = false, false
+
+	bhopConn = RunService.Heartbeat:Connect(function()
 		if not getgenv().GameSenseActive then return end
 		local char = player.Character
-		local hum = char and char:FindFirstChildOfClass("Humanoid")
-		local root = char and char:FindFirstChild("HumanoidRootPart")
+		if not char then return end
+		local hum = char:FindFirstChildOfClass("Humanoid")
+		local root = char:FindFirstChild("HumanoidRootPart")
 		if not hum or not root or hum.Health <= 0 then return end
-		if (S.bhopEnabled or S.rageBhop) and S.spaceHeld and hum.FloorMaterial ~= Enum.Material.Air then
-			local cd = S.rageBhop and 0.008 or S.jumpCooldown
-			if tick() - S.lastJump >= cd then
+
+		local space = S.spaceHeld
+		pcall(function()
+			if UIS:IsKeyDown(Enum.KeyCode.Space) then space = true end
+		end)
+
+		if (S.bhopEnabled or S.rageBhop) and space then
+			local grounded = hum.FloorMaterial ~= Enum.Material.Air
+			local cd = S.rageBhop and 0.01 or (tonumber(S.jumpCooldown) or 0.02)
+			if grounded and (tick() - (tonumber(S.lastJump) or 0)) >= cd then
 				S.lastJump = tick()
-				hum.Jump = true
+				pcall(function()
+					hum.Jump = true
+					hum:ChangeState(Enum.HumanoidStateType.Jumping)
+				end)
 				if S.rageBhop then
-					local moveDir = hum.MoveDirection
+					local dist = tonumber(S.jumpDistance) or 8
+					local move = hum.MoveDirection
 					local dir
-					if moveDir.Magnitude > 0.1 then
-						dir = Vector3.new(moveDir.X, 0, moveDir.Z).Unit
+					if move.Magnitude > 0.05 then
+						dir = Vector3.new(move.X, 0, move.Z)
+						if dir.Magnitude > 0 then dir = dir.Unit end
 					else
 						local look = camera.CFrame.LookVector
 						dir = Vector3.new(look.X, 0, look.Z)
-						if dir.Magnitude > 0 then dir = dir.Unit end
+						if dir.Magnitude > 0.05 then dir = dir.Unit else dir = Vector3.new(0, 0, -1) end
 					end
-					local force = S.jumpDistance * 9.5
-					local currentY = root.AssemblyLinearVelocity.Y
-					root.AssemblyLinearVelocity = Vector3.new(dir.X * force, math.max(currentY, S.jumpDistance * 2.6), dir.Z * force)
+					local hx = dir.X * dist * 9.5
+					local hz = dir.Z * dist * 9.5
+					local hy = dist * 2.8
+					pcall(function()
+						local vy = root.AssemblyLinearVelocity.Y
+						if vy > hy then hy = vy end
+						root.AssemblyLinearVelocity = Vector3.new(hx, hy, hz)
+					end)
 				end
 			end
 		end
+
 		if S.autoStrafeEnabled and hum.FloorMaterial == Enum.Material.Air then
-			local currentYaw = API.getCamYaw()
+			local currentYaw = lastYaw
+			pcall(function() currentYaw = API.getCamYaw() end)
 			local delta = currentYaw - lastYaw
 			if delta > 180 then delta = delta - 360 end
 			if delta < -180 then delta = delta + 360 end
 			local pressA = delta > 1.5
 			local pressD = delta < -1.5
-			if pressA and not aHeld then aHeld = true pcall(function() VIM:SendKeyEvent(true, Enum.KeyCode.A, false, game) end)
-			elseif not pressA and aHeld then aHeld = false pcall(function() VIM:SendKeyEvent(false, Enum.KeyCode.A, false, game) end) end
-			if pressD and not dHeld then dHeld = true pcall(function() VIM:SendKeyEvent(true, Enum.KeyCode.D, false, game) end)
-			elseif not pressD and dHeld then dHeld = false pcall(function() VIM:SendKeyEvent(false, Enum.KeyCode.D, false, game) end) end
+			if pressA and not State.aHeld then
+				State.aHeld = true
+				pcall(function() VIM:SendKeyEvent(true, Enum.KeyCode.A, false, game) end)
+			elseif not pressA and State.aHeld then
+				State.aHeld = false
+				pcall(function() VIM:SendKeyEvent(false, Enum.KeyCode.A, false, game) end)
+			end
+			if pressD and not State.dHeld then
+				State.dHeld = true
+				pcall(function() VIM:SendKeyEvent(true, Enum.KeyCode.D, false, game) end)
+			elseif not pressD and State.dHeld then
+				State.dHeld = false
+				pcall(function() VIM:SendKeyEvent(false, Enum.KeyCode.D, false, game) end)
+			end
 			lastYaw = currentYaw
 		else
-			if aHeld then aHeld = false pcall(function() VIM:SendKeyEvent(false, Enum.KeyCode.A, false, game) end) end
-			if dHeld then dHeld = false pcall(function() VIM:SendKeyEvent(false, Enum.KeyCode.D, false, game) end) end
-			lastYaw = API.getCamYaw()
+			if State.aHeld then
+				State.aHeld = false
+				pcall(function() VIM:SendKeyEvent(false, Enum.KeyCode.A, false, game) end)
+			end
+			if State.dHeld then
+				State.dHeld = false
+				pcall(function() VIM:SendKeyEvent(false, Enum.KeyCode.D, false, game) end)
+			end
+			pcall(function() lastYaw = API.getCamYaw() end)
 		end
 	end)
 end
@@ -1979,12 +2116,12 @@ API.addConn(RunService.RenderStepped:Connect(function()
 	end
 	-- FPS / Ping warning
 	local ping = API.getPing()
-	if fps > 0 and fps < (S.fpsWarn or 30) and tick() - lastFpsWarn > 8 then
-		lastFpsWarn = tick()
+	if fps > 0 and fps < (S.fpsWarn or 30) and tick() - State.lastFpsWarn > 8 then
+		State.lastFpsWarn = tick()
 		showAchievement(S.lang == "en" and "Low FPS" or "Низкий FPS", tostring(fps) .. " fps")
 	end
-	if ping > (S.pingWarn or 150) and tick() - lastPingWarn > 8 then
-		lastPingWarn = tick()
+	if ping > (S.pingWarn or 150) and tick() - State.lastPingWarn > 8 then
+		State.lastPingWarn = tick()
 		showAchievement(S.lang == "en" and "High Ping" or "Высокий пинг", tostring(ping) .. " ms")
 	end
 end))
@@ -2107,8 +2244,8 @@ local function destroyScript()
 	RunService:UnbindFromRenderStep("GSAim")
 	if bhopConn then pcall(function() bhopConn:Disconnect() end) end
 	if strafeConn then pcall(function() strafeConn:Disconnect() end) end
-	if aHeld then pcall(function() VIM:SendKeyEvent(false, Enum.KeyCode.A, false, game) end) end
-	if dHeld then pcall(function() VIM:SendKeyEvent(false, Enum.KeyCode.D, false, game) end) end
+	if State.aHeld then pcall(function() VIM:SendKeyEvent(false, Enum.KeyCode.A, false, game) end) end
+	if State.dHeld then pcall(function() VIM:SendKeyEvent(false, Enum.KeyCode.D, false, game) end) end
 	for _, c in ipairs(connections) do pcall(function() c:Disconnect() end) end
 	for plr in pairs(espData) do API.removeESP(plr) end
 	for _, d in pairs(getgenv().GameSenseDrawings) do pcall(function() d:Remove() end) end
@@ -2214,10 +2351,18 @@ local function toggle(p, text, def, id)
 	local on = def == true
 	local function paint() b.BackgroundColor3 = on and C.green or C.off end
 	paint()
-	b.MouseButton1Click:Connect(function() on = not on paint() end)
+	b.MouseButton1Click:Connect(function()
+		on = not on
+		paint()
+		if id and S[id] ~= nil then S[id] = on end
+	end)
 	local controller = {
 		get = function() return on end,
-		set = function(v) on = v and true or false paint() end
+		set = function(v)
+			on = v and true or false
+			paint()
+			if id and S[id] ~= nil then S[id] = on end
+		end
 	}
 	if id then toggleControllers[id] = controller end
 	return controller.get
@@ -2364,7 +2509,11 @@ UIS.InputBegan:Connect(function(input, processed)
 		end
 		return
 	end
-	if input.KeyCode == S.walkSpeedBind then S.walkSpeedHeld = true end
+	do
+		local b = S.walkSpeedBind
+		if type(b) == "string" and Enum.KeyCode[b] then b = Enum.KeyCode[b] S.walkSpeedBind = b end
+		if b and input.KeyCode == b then S.walkSpeedHeld = true end
+	end
 	if input.KeyCode == S.jumpLeaveBind then
 		S.jumpLeaveActive = not S.jumpLeaveActive
 		if S.jumpLeaveActive and not jumpLeaveThread then
@@ -2419,138 +2568,194 @@ end)
 
 UIS.InputEnded:Connect(function(input)
 	if not getgenv().GameSenseActive then return end
-	if input.KeyCode == S.walkSpeedBind then S.walkSpeedHeld = false end
+	do
+		local b = S.walkSpeedBind
+		if type(b) == "string" and Enum.KeyCode[b] then b = Enum.KeyCode[b] S.walkSpeedBind = b end
+		if b and input.KeyCode == b then S.walkSpeedHeld = false end
+	end
 	if input.KeyCode == S.aimbotKey and not S.aimModeToggle then
 		S.isAiming = false S.lockedTarget = nil S.lockedUserId = nil
 	end
 end)
 
 -- ================= CONFIG =================
+local function syncUIToS()
+	for id, ctrl in pairs(toggleControllers) do
+		if type(id) == "string" and ctrl and ctrl.get then
+			local v = ctrl.get() and true or false
+			S[id] = v
+		end
+	end
+	for id, ctrl in pairs(sliderControllers) do
+		if type(id) == "string" and ctrl and ctrl.get then
+			local n = tonumber(ctrl.get())
+			if n ~= nil then S[id] = n end
+		end
+	end
+end
+
+local function syncSToUI()
+	for id, ctrl in pairs(toggleControllers) do
+		if type(id) == "string" and ctrl and ctrl.set then
+			local v = S[id]
+			if v ~= nil then
+				pcall(function() ctrl.set(v and true or false) end)
+			end
+		end
+	end
+	for id, ctrl in pairs(sliderControllers) do
+		if type(id) == "string" and ctrl and ctrl.set then
+			local n = tonumber(S[id])
+			if n ~= nil then
+				pcall(function() ctrl.set(n) end)
+			end
+		end
+	end
+	for _, fn in pairs(refreshBind) do pcall(fn) end
+end
+
 local function getSettings()
-	local wm = Watermark and Watermark.Position or UDim2.new(0, 12, 0, 28)
-	local kb = KeybindsList and KeybindsList.Position or UDim2.new(0, 12, 0, 62)
-	return {
-		visualsEnabled = S.visualsEnabled, showBoxes = S.showBoxes, showNames = S.showNames, showHealth = S.showHealth,
-		showSkeleton = S.showSkeleton, showTargetInfo = S.showTargetInfo, showAimView = S.showAimView,
-		teamCheck = S.teamCheck, friendCheck = S.friendCheck, maxDistance = S.maxDistance, boxThickness = S.boxThickness,
-		aimbotEnabled = S.aimbotEnabled, aimFov = S.aimFov, aimSmooth = S.aimSmooth, showFov = S.showFov,
-		multiPoint = S.multiPoint, aimModeToggle = S.aimModeToggle,
-		aimbotKey = API.keyToString(S.aimbotKey), scriptKey = API.keyToString(S.scriptKey),
-		triggerBotEnabled = S.triggerBotEnabled, triggerTeamCheck = S.triggerTeamCheck,
-		triggerMaxDistance = S.triggerMaxDistance, triggerClickDelay = S.triggerClickDelay, triggerHoldTime = S.triggerHoldTime,
-		aaEnabled = S.aaEnabled, aaYaw = S.aaYaw, aaPitch = S.aaPitch, aaJitter = S.aaJitter, aaSpin = S.aaSpin,
-		aaSpinSpeed = S.aaSpinSpeed, aaJitterRange = S.aaJitterRange, aaBackward = S.aaBackward, aaLeft = S.aaLeft,
-		aaRight = S.aaRight, aaRandom = S.aaRandom, teleportAA = S.teleportAA,
-		bhopEnabled = S.bhopEnabled, rageBhop = S.rageBhop, jumpDistance = S.jumpDistance,
-		autoStrafeEnabled = S.autoStrafeEnabled,
-		targetStrafeEnabled = S.targetStrafeEnabled, targetStrafeSpeed = S.targetStrafeSpeed,
-		targetStrafeHeight = S.targetStrafeHeight, targetStrafeRadius = S.targetStrafeRadius, resolverEnabled = S.resolverEnabled,
-		watermarkEnabled = S.watermarkEnabled, wmShowFps = S.wmShowFps, wmShowTime = S.wmShowTime,
-		wmShowName = S.wmShowName, wmShowPing = S.wmShowPing, keybindsListVisible = S.keybindsListVisible,
-		walkSpeedEnabled = S.walkSpeedEnabled, walkSpeedValue = S.walkSpeedValue,
-		walkSpeedBind = API.keyToString(S.walkSpeedBind), walkRamp = S.walkRamp,
-		jumpLeaveBind = API.keyToString(S.jumpLeaveBind),
-		petEnabled = S.petEnabled, petName = S.petName, petHunger = S.petHunger, petThirst = S.petThirst,
-		petFrozen = S.petFrozen, petAccessory = S.petAccessory, petGender = S.petGender,
-		petGrowth = petGrowth,
-		petArousal = petArousal,
-		relationship = S.relationship,
-		lang = S.lang,
-		aiKey = S.aiKey,
-		fpsWarn = S.fpsWarn,
-		pingWarn = S.pingWarn,
-		stompCount = stompCount,
-		petStats = { pats = petStats.pats, feeds = petStats.feeds, inserts = petStats.inserts, kills = petStats.kills, stomps = petStats.stomps },
-		petAchDone = (function()
-			local t = {}
-			for _, a in ipairs(petAchievements) do if a.done then t[a.id] = true end end
-			return t
-		end)(),
-		visualsColor = {S.visualsColor.R, S.visualsColor.G, S.visualsColor.B},
-		friendColor = {S.friendColor.R, S.friendColor.G, S.friendColor.B},
-		wmPosX = wm.X.Offset, wmPosY = wm.Y.Offset, kbPosX = kb.X.Offset, kbPosY = kb.Y.Offset,
-		currentTheme = currentTheme, currentFont = currentFont,
+	syncUIToS()
+	local out = {}
+	-- явный список важных bool
+	local boolKeys = {
+		"visualsEnabled","showBoxes","showNames","showHealth","showSkeleton","showTargetInfo","showAimView",
+		"teamCheck","friendCheck","showFov","multiPoint","aimModeToggle","aimbotEnabled",
+		"triggerBotEnabled","resolverEnabled","aaEnabled","aaJitter","aaSpin","aaBackward","aaLeft","aaRight",
+		"aaRandom","teleportAA","bhopEnabled","rageBhop","autoStrafeEnabled","targetStrafeEnabled",
+		"walkSpeedEnabled","watermarkEnabled","wmShowFps","wmShowPing","wmShowTime","wmShowName",
+		"keybindsListVisible","petEnabled","petFrozen"
 	}
+	for _, k in ipairs(boolKeys) do
+		if S[k] ~= nil then out[k] = S[k] and true or false end
+	end
+	-- все контроллеры на всякий
+	for id, ctrl in pairs(toggleControllers) do
+		if type(id) == "string" and ctrl and ctrl.get then
+			out[id] = ctrl.get() and true or false
+		end
+	end
+	local numKeys = {
+		"aimFov","aimSmooth","maxDistance","walkSpeedValue","walkRamp","jumpDistance",
+		"targetStrafeSpeed","targetStrafeHeight","targetStrafeRadius",
+		"triggerClickDelay","triggerHoldTime","fpsWarn","pingWarn","relationship",
+		"petHunger","petThirst","aaYaw","aaPitch","aaSpinSpeed","aaJitterRange","boxThickness"
+	}
+	for _, k in ipairs(numKeys) do
+		local n = tonumber(S[k])
+		if n ~= nil then out[k] = n end
+	end
+	for id, ctrl in pairs(sliderControllers) do
+		if type(id) == "string" and ctrl and ctrl.get then
+			local n = tonumber(ctrl.get())
+			if n ~= nil then out[id] = n end
+		end
+	end
+	out.aimbotKey = API.keyToString(S.aimbotKey)
+	out.scriptKey = API.keyToString(S.scriptKey)
+	out.walkSpeedBind = API.keyToString(S.walkSpeedBind)
+	out.jumpLeaveBind = API.keyToString(S.jumpLeaveBind)
+	out.petName = tostring(S.petName or "Kitty")
+	out.petGender = tostring(S.petGender or "Female")
+	out.lang = tostring(S.lang or "ru")
+	out.petAccessory = tostring(S.petAccessory or "None")
+	out.petGrowth = tonumber(State.petGrowth) or 0
+	out.petArousal = tonumber(State.petArousal) or 0
+	out.stompCount = tonumber(State.stompCount) or 0
+	out.lastSquirtTier = tonumber(State.lastSquirtTier) or 0
+	out.petStats = {
+		pats = petStats.pats or 0, feeds = petStats.feeds or 0,
+		inserts = petStats.inserts or 0, kills = petStats.kills or 0, stomps = petStats.stomps or 0
+	}
+	local done = {}
+	for _, a in ipairs(petAchievements) do if a.done then done[a.id] = true end end
+	out.petAchDone = done
+	pcall(function()
+		out.visualsColor = {S.visualsColor.R, S.visualsColor.G, S.visualsColor.B}
+		out.friendColor = {S.friendColor.R, S.friendColor.G, S.friendColor.B}
+	end)
+	if Watermark then
+		out.wmPosX = Watermark.Position.X.Offset
+		out.wmPosY = Watermark.Position.Y.Offset
+	end
+	if KeybindsList then
+		out.kbPosX = KeybindsList.Position.X.Offset
+		out.kbPosY = KeybindsList.Position.Y.Offset
+	end
+	out.currentTheme = currentTheme
+	out.currentFont = currentFont
+	out.ownerUserId = tostring(player.UserId)
+	out.ownerName = tostring(player.Name)
+	return out
 end
 
 local function applySettings(cfg)
 	if type(cfg) ~= "table" then return end
-	for k, v in pairs(cfg) do if S[k] ~= nil then S[k] = v end end
-	S.walkSpeedValue = math.clamp(tonumber(S.walkSpeedValue) or 16, 16, 1000)
-	S.walkRamp = math.clamp(tonumber(S.walkRamp) or 120, 20, 800)
-	S.jumpDistance = math.clamp(tonumber(S.jumpDistance) or 8, 3, 25)
-	if cfg.aimbotKey and Enum.KeyCode[cfg.aimbotKey] then S.aimbotKey = Enum.KeyCode[cfg.aimbotKey] end
-	if cfg.scriptKey and Enum.KeyCode[cfg.scriptKey] then S.scriptKey = Enum.KeyCode[cfg.scriptKey] end
-	if cfg.walkSpeedBind and Enum.KeyCode[cfg.walkSpeedBind] then S.walkSpeedBind = Enum.KeyCode[cfg.walkSpeedBind] end
-	if cfg.jumpLeaveBind and Enum.KeyCode[cfg.jumpLeaveBind] then S.jumpLeaveBind = Enum.KeyCode[cfg.jumpLeaveBind] end
-	if cfg.visualsColor then S.visualsColor = Color3.new(cfg.visualsColor[1], cfg.visualsColor[2], cfg.visualsColor[3]) end
-	if cfg.friendColor then S.friendColor = Color3.new(cfg.friendColor[1], cfg.friendColor[2], cfg.friendColor[3]) end
-	if cfg.currentTheme and themes[cfg.currentTheme] then currentTheme = cfg.currentTheme C = themes[currentTheme] end
-	if cfg.currentFont and fonts[cfg.currentFont] then
-		currentFont = cfg.currentFont
-		ActiveFont = fonts[currentFont]
-		applyFontToAll()
-	end
-	if Watermark and cfg.wmPosX then Watermark.Position = UDim2.new(0, cfg.wmPosX, 0, cfg.wmPosY) end
-	if KeybindsList and cfg.kbPosX then KeybindsList.Position = UDim2.new(0, cfg.kbPosX, 0, cfg.kbPosY) end
-	for _, fn in pairs(refreshBind) do fn() end
-	updatePetVisuals()
 
-	local map = {
-		visualsEnabled = "visualsEnabled", showBoxes = "showBoxes", showNames = "showNames",
-		showHealth = "showHealth", showSkeleton = "showSkeleton", showTargetInfo = "showTargetInfo",
-		showAimView = "showAimView", teamCheck = "teamCheck", friendCheck = "friendCheck",
-		showFov = "showFov", multiPoint = "multiPoint", aimModeToggle = "aimModeToggle",
-		triggerBotEnabled = "triggerBotEnabled", resolverEnabled = "resolverEnabled",
-		aaEnabled = "aaEnabled", aaJitter = "aaJitter", aaSpin = "aaSpin",
-		aaBackward = "aaBackward", aaLeft = "aaLeft", aaRight = "aaRight",
-		aaRandom = "aaRandom", teleportAA = "teleportAA",
-		bhopEnabled = "bhopEnabled", rageBhop = "rageBhop", autoStrafeEnabled = "autoStrafeEnabled",
-		targetStrafeEnabled = "targetStrafeEnabled",
-		walkSpeedEnabled = "walkSpeedEnabled",
-		watermarkEnabled = "watermarkEnabled", wmShowFps = "wmShowFps",
-		wmShowPing = "wmShowPing", wmShowTime = "wmShowTime", wmShowName = "wmShowName",
-		keybindsListVisible = "keybindsListVisible", petEnabled = "petEnabled", petFrozen = "petFrozen",
-	}
-	for key, id in pairs(map) do
-		if toggleControllers[id] and S[key] ~= nil then
-			toggleControllers[id].set(S[key])
+	-- bool / number / string из cfg в S
+	for k, v in pairs(cfg) do
+		if type(k) == "string" then
+			if type(v) == "boolean" then
+				S[k] = v
+			elseif type(v) == "number" then
+				S[k] = v
+			elseif type(v) == "string" then
+				if k == "petName" or k == "petGender" or k == "lang" or k == "petAccessory" or k == "aiKey" or k == "currentTheme" or k == "currentFont" then
+					S[k] = v
+				end
+			end
 		end
 	end
-	-- слайдеры (walkspeed, fov и т.д.)
-	local sliderMap = {
-		walkSpeedValue = "walkSpeedValue",
-		walkRamp = "walkRamp",
-		aimFov = "aimFov",
-		aimSmooth = "aimSmooth",
-		targetStrafeSpeed = "targetStrafeSpeed",
-		maxDistance = "maxDistance",
-		jumpDistance = "jumpDistance",
-	}
-	for key, id in pairs(sliderMap) do
-		if sliderControllers[id] and S[key] ~= nil then
-			sliderControllers[id].set(S[key])
-		end
+
+	S.walkSpeedValue = math.clamp(tonumber(cfg.walkSpeedValue or S.walkSpeedValue) or 16, 16, 1000)
+	S.walkRamp = math.clamp(tonumber(cfg.walkRamp or S.walkRamp) or 120, 20, 800)
+	S.jumpDistance = math.clamp(tonumber(cfg.jumpDistance or S.jumpDistance) or 8, 3, 25)
+	S.aimFov = math.clamp(tonumber(cfg.aimFov or S.aimFov) or 150, 1, 500)
+	S.aimSmooth = math.clamp(tonumber(cfg.aimSmooth or S.aimSmooth) or 1, 1, 20)
+
+	if type(cfg.aimbotKey) == "string" and Enum.KeyCode[cfg.aimbotKey] then S.aimbotKey = Enum.KeyCode[cfg.aimbotKey] end
+	if type(cfg.scriptKey) == "string" and Enum.KeyCode[cfg.scriptKey] then S.scriptKey = Enum.KeyCode[cfg.scriptKey] end
+	if type(cfg.walkSpeedBind) == "string" and Enum.KeyCode[cfg.walkSpeedBind] then S.walkSpeedBind = Enum.KeyCode[cfg.walkSpeedBind] end
+	if type(cfg.jumpLeaveBind) == "string" and Enum.KeyCode[cfg.jumpLeaveBind] then S.jumpLeaveBind = Enum.KeyCode[cfg.jumpLeaveBind] end
+
+	if type(cfg.visualsColor) == "table" then
+		S.visualsColor = Color3.new(cfg.visualsColor[1] or 1, cfg.visualsColor[2] or 1, cfg.visualsColor[3] or 1)
 	end
-	if type(S.petName) == "string" and S.petName ~= "" then
-		updatePetVisuals()
-		if refreshPetNameBox then refreshPetNameBox(S.petName) end
+	if type(cfg.friendColor) == "table" then
+		S.friendColor = Color3.new(cfg.friendColor[1] or 0.3, cfg.friendColor[2] or 1, cfg.friendColor[3] or 0.3)
+	end
+
+	-- UI сразу
+	syncSToUI()
+
+	pcall(function()
+		if cfg.currentTheme and themes[cfg.currentTheme] and applyTheme then applyTheme(cfg.currentTheme) end
+	end)
+	pcall(function()
+		if cfg.currentFont and fonts[cfg.currentFont] then
+			currentFont = cfg.currentFont
+			ActiveFont = fonts[currentFont]
+			applyFontToAll()
+		end
+	end)
+	pcall(function()
+		if Watermark and cfg.wmPosX then Watermark.Position = UDim2.new(0, cfg.wmPosX, 0, cfg.wmPosY or 28) end
+		if KeybindsList and cfg.kbPosX then KeybindsList.Position = UDim2.new(0, cfg.kbPosX, 0, cfg.kbPosY or 62) end
+	end)
+	pcall(updatePetVisuals)
+
+	if type(cfg.petName) == "string" and cfg.petName ~= "" then
+		S.petName = cfg.petName
+		if refreshPetNameBox then pcall(refreshPetNameBox, S.petName) end
 	end
 	if cfg.petGrowth ~= nil then
-		petGrowth = math.clamp(tonumber(cfg.petGrowth) or 0, 0, 100)
-		if applyPetScale then applyPetScale() end
+		State.petGrowth = math.clamp(tonumber(cfg.petGrowth) or 0, 0, 100)
+		if applyPetScale then pcall(applyPetScale) end
 	end
-	if cfg.petArousal ~= nil then
-		petArousal = math.clamp(tonumber(cfg.petArousal) or 0, 0, 100)
-	end
+	if cfg.petArousal ~= nil then State.petArousal = math.clamp(tonumber(cfg.petArousal) or 0, 0, 100) end
 	if cfg.relationship ~= nil then S.relationship = math.clamp(tonumber(cfg.relationship) or 0, 0, 100) end
 	if cfg.lang == "en" or cfg.lang == "ru" then S.lang = cfg.lang end
-	if type(cfg.aiKey) == "string" then S.aiKey = cfg.aiKey end
-	if cfg.fpsWarn then S.fpsWarn = tonumber(cfg.fpsWarn) or 30 end
-	if cfg.pingWarn then S.pingWarn = tonumber(cfg.pingWarn) or 150 end
-	if cfg.stompCount ~= nil then
-		stompCount = tonumber(cfg.stompCount) or 0
-	end
+	if cfg.stompCount ~= nil then State.stompCount = tonumber(cfg.stompCount) or 0 end
 	if type(cfg.petStats) == "table" then
 		for k, v in pairs(cfg.petStats) do
 			if petStats[k] ~= nil then petStats[k] = tonumber(v) or petStats[k] end
@@ -2562,19 +2767,38 @@ local function applySettings(cfg)
 		end
 		if refreshAchieveList then task.defer(refreshAchieveList) end
 	end
-	if S.bhopEnabled or S.rageBhop or S.autoStrafeEnabled then setupBhop() end
-	if S.targetStrafeEnabled then setupStrafe() end
+
+	task.defer(function()
+		task.wait(0.1)
+		syncSToUI()
+		pcall(function()
+			if S.bhopEnabled or S.rageBhop or S.autoStrafeEnabled then setupBhop() end
+			if S.targetStrafeEnabled then setupStrafe() end
+		end)
+	end)
 end
 
 local function saveCfg(name, silent)
 	if not name or name == "" then return end
 	API.ensureFolder()
-	local ok, enc = pcall(function() return HttpService:JSONEncode(getSettings()) end)
-	if ok then
-		pcall(function() writefile("GameSenseConfigs/" .. name .. ".json", enc) end)
+	API.setSavedOwner(tostring(player.UserId) .. "|" .. tostring(player.Name))
+	local data = getSettings()
+	local nOn = 0
+	for k, v in pairs(data) do
+		if v == true then nOn = nOn + 1 end
+	end
+	local ok, enc = pcall(function() return HttpService:JSONEncode(data) end)
+	if ok and enc then
+		local wok = pcall(function() writefile("GameSenseConfigs/" .. name .. ".json", enc) end)
 		if not silent then
-			showAchievement("Config Saved", "Saved as: " .. name)
+			if wok then
+				showAchievement("Config Saved", name .. " · on:" .. tostring(nOn))
+			else
+				showAchievement("Save Failed", "writefile error")
+			end
 		end
+	else
+		if not silent then showAchievement("Save Failed", "JSON error") end
 	end
 	if refreshConfigList and not silent then refreshConfigList() end
 end
@@ -2582,7 +2806,7 @@ end
 -- автосейв каждые 50 сек
 task.spawn(function()
 	while Screen.Parent do
-		task.wait(50)
+		task.wait(60)
 		local autoName = getAuto()
 		saveCfg("autosave", true)
 		if autoName and autoName ~= "" and autoName ~= "autosave" then
@@ -2599,8 +2823,26 @@ local function loadCfg(name)
 		return
 	end
 	local success, cfg = pcall(function() return HttpService:JSONDecode(content) end)
-	if success then
+	if success and type(cfg) == "table" then
+		-- чужой cfg по ownerUserId — не применяем
+		if cfg.ownerUserId then
+			local oid = tostring(cfg.ownerUserId)
+			local mine = tostring(player.UserId)
+			-- ownerUserId мог быть "123|Name" или "123"
+			local onlyId = string.match(oid, "^(%d+)")
+			if onlyId and onlyId ~= mine then
+				showAchievement("Load Denied", "cfg другого аккаунта")
+				return
+			end
+		end
+		if cfg.ownerName and tostring(cfg.ownerName) ~= "" then
+			if string.lower(tostring(cfg.ownerName)) ~= string.lower(tostring(player.Name)) then
+				showAchievement("Load Denied", "cfg другого ника")
+				return
+			end
+		end
 		applySettings(cfg)
+		API.setSavedOwner(tostring(player.UserId) .. "|" .. tostring(player.Name))
 		showAchievement("Config Loaded", "Loaded: " .. name)
 	end
 end
@@ -2647,6 +2889,24 @@ local function delCfg(name)
 	if refreshConfigList then refreshConfigList() end
 end
 
+
+local ExtraUI = { ChatGui = nil, SpecGui = nil }
+-- chat / deepseek removed
+
+
+
+local function applyTheme(name)
+	if not themes[name] then return end
+	currentTheme = name
+	C = themes[name]
+	pcall(function()
+		if Main then Main.BackgroundColor3 = C.bg end
+		if Sidebar then Sidebar.BackgroundColor3 = C.panel end
+		if Content then Content.BackgroundColor3 = C.bg end
+		if TopBar then TopBar.BackgroundColor3 = C.panel end
+	end)
+end
+local function initMenuPages()
 local PageBuild = {}
 
 local function _pageShell(page, titleLeft, titleRight)
@@ -2717,6 +2977,7 @@ function PageBuild.Visuals(leftB, rightB)
 			task.wait(0.1)
 		end
 	end)
+
 end
 
 function PageBuild.AntiAim(leftB, rightB)
@@ -2764,6 +3025,7 @@ function PageBuild.Misc(leftB, rightB)
 	local m11 = toggle(rightB, "Keybinds list", true, "keybindsListVisible")
 
 	task.spawn(function()
+		local lastWalkUI = m3()
 		while Screen.Parent do
 			local bhop = m1() local rage = mRage() local astr = m2()
 			if bhop ~= S.bhopEnabled or rage ~= S.rageBhop or astr ~= S.autoStrafeEnabled then
@@ -2771,25 +3033,28 @@ function PageBuild.Misc(leftB, rightB)
 				setupBhop()
 			end
 			S.jumpDistance = mJumpDist()
-			local wasWalk = S.walkSpeedEnabled
-			S.walkSpeedEnabled = m3()
+			local walkOn = m3()
 			S.walkSpeedValue = m4()
 			S.walkRamp = m5()
-			if S.walkSpeedEnabled and not wasWalk then
+			if walkOn and not lastWalkUI then
 				S.liveSpeed = 16
+				S.walkSpeedHeld = false
 				local char = player.Character
 				if char then
 					local hum = char:FindFirstChildOfClass("Humanoid")
-					if hum then hum.Health = 0 end
+					if hum then pcall(function() hum.Health = 0 end) end
 				end
 			end
+			lastWalkUI = walkOn
+			S.walkSpeedEnabled = walkOn
 			S.watermarkEnabled = m6() S.wmShowFps = m7() S.wmShowPing = m8()
 			S.wmShowTime = m9() S.wmShowName = m10() S.keybindsListVisible = m11()
-			task.wait(0.1)
+			task.wait(0.15)
 		end
 	end)
 
 end
+
 
 function PageBuild.Pet(leftB, rightB)
 	local pEnable = toggle(leftB, "Show Pet", true, "petEnabled")
@@ -2861,13 +3126,13 @@ function PageBuild.Pet(leftB, rightB)
 	relLbl.Text = "..."
 
 	makeBtn(rightB, "Сон / Разбудить", function()
-		petSleeping = not petSleeping
-		if petSleeping then
-			petSitting = true
+		State.petSleeping = not State.petSleeping
+		if State.petSleeping then
+			State.petSitting = true
 			petFace.Text = "🐈"
 			petSay(S.lang == "en" and "zzz..." or "хррр...")
 		else
-			petSitting = false
+			State.petSitting = false
 			petFace.Text = "🐱"
 			petSay(S.lang == "en" and "huh? morning" or "а? уже утро?")
 		end
@@ -2877,16 +3142,6 @@ function PageBuild.Pet(leftB, rightB)
 		startMiniGame()
 	end)
 
-	label(rightB, "DeepSeek API (опц.)", UDim2.new(), UDim2.new(1, 0, 0, 18), C.muted, 12)
-	local aiBox = makeBox(rightB, "sk-...")
-	aiBox.Text = S.aiKey or ""
-	aiBox.FocusLost:Connect(function()
-		S.aiKey = aiBox.Text or ""
-		petSay(S.lang == "en" and "ai key set" or "ключ сохранён")
-	end)
-	makeBtn(rightB, "Спросить кота (AI)", function()
-		askPetAI(S.lang == "en" and "Say a short cute line about the player" or "Скажи короткую милую фразу про хозяина")
-	end)
 
 	task.spawn(function()
 		while Screen.Parent do
@@ -2897,7 +3152,7 @@ function PageBuild.Pet(leftB, rightB)
 				or r < 50 and (S.lang == "en" and "friend" or "друг")
 				or r < 75 and (S.lang == "en" and "close" or "близкий")
 				or (S.lang == "en" and "soulmate" or "пара")
-			relLbl.Text = string.format("%s: %d/100 (%s)%s", S.lang == "en" and "Bond" or "Связь", r, tier, petSleeping and " 💤" or "")
+			relLbl.Text = string.format("%s: %d/100 (%s)%s", S.lang == "en" and "Bond" or "Связь", r, tier, State.petSleeping and " 💤" or "")
 			task.wait(0.15)
 		end
 	end)
@@ -2961,7 +3216,7 @@ function PageBuild.Achieve(leftB, rightB)
 				"паты: %d\nкормления: %d\n🍆/🍌: %d\nкилл-реплики: %d\nstomp: %d",
 				petStats.pats, petStats.feeds, petStats.inserts, petStats.kills, petStats.stomps
 			)
-			growthLbl.Text = string.format("рост: %d%%  |  сквирт: %d%%", math.floor(petGrowth), math.floor(petArousal))
+			growthLbl.Text = string.format("рост: %d%%  |  сквирт: %d%%", math.floor(State.petGrowth), math.floor(State.petArousal))
 			task.wait(0.4)
 		end
 	end)
@@ -2996,7 +3251,10 @@ function PageBuild.Config(leftB, rightB)
 	makeBtn(leftB, "Delete", function() delCfg(nb.Text) end)
 	label(rightB, "Themes", UDim2.new(), UDim2.new(1, 0, 0, 20), C.green, 13)
 	for tn in pairs(themes) do
-		makeBtn(rightB, tn, function() currentTheme = tn C = themes[tn] end)
+		makeBtn(rightB, tn, function()
+			applyTheme(tn)
+			showAchievement("Theme", tn)
+		end)
 	end
 	label(rightB, "Fonts", UDim2.new(), UDim2.new(1, 0, 0, 20), C.green, 13)
 	for fn in pairs(fonts) do
@@ -3170,56 +3428,73 @@ buttons.Rage.btn.BackgroundColor3 = C.section
 buttons.Rage.btn.TextColor3 = C.text
 buttons.Rage.marker.Visible = true
 pages.Rage.Visible = true
+end
+initMenuPages()
 
-local function updateLayout()
-	local w, h = Content.AbsoluteSize.X, Content.AbsoluteSize.Y
-	for _, name in ipairs(tabs) do
-		local pair = layouts[name]
-		if pair then
-			local gap, margin = 10, 11
-			local avail = math.max(180, w - margin * 2 - gap)
-			local col = math.floor(avail / 2)
-			local ch = math.max(120, h - 24)
-			pair[1].Position = UDim2.fromOffset(margin, 12)
-			pair[1].Size = UDim2.fromOffset(col, ch)
-			pair[2].Position = UDim2.fromOffset(margin + col + gap, 12)
-			pair[2].Size = UDim2.fromOffset(col, ch)
+
+local function initResizeAndAutoload()
+	local function updateLayout()
+		local w, h = Content.AbsoluteSize.X, Content.AbsoluteSize.Y
+		for _, name in ipairs(tabs) do
+			local pair = layouts[name]
+			if pair then
+				local gap, margin = 10, 11
+				local avail = math.max(180, w - margin * 2 - gap)
+				local col = math.floor(avail / 2)
+				local ch = math.max(120, h - 24)
+				pair[1].Position = UDim2.fromOffset(margin, 12)
+				pair[1].Size = UDim2.fromOffset(col, ch)
+				pair[2].Position = UDim2.fromOffset(margin + col + gap, 12)
+				pair[2].Size = UDim2.fromOffset(col, ch)
+			end
 		end
 	end
+	Content:GetPropertyChangedSignal("AbsoluteSize"):Connect(updateLayout)
+	Main:GetPropertyChangedSignal("AbsoluteSize"):Connect(updateLayout)
+
+	local Resize = Instance.new("TextButton", Main)
+	Resize.Size = UDim2.fromOffset(18, 18)
+	Resize.Position = UDim2.new(1, -18, 1, -18)
+	Resize.BackgroundColor3 = C.green
+	Resize.BorderSizePixel = 0
+	Resize.Text = ""
+	Resize.ZIndex = 70
+	Resize.Active = true
+	local resizing, rMouse, rSize = false, nil, nil
+	Resize.InputBegan:Connect(function(i)
+		if i.UserInputType == Enum.UserInputType.MouseButton1 then
+			resizing = true rMouse = i.Position rSize = Main.AbsoluteSize
+		end
+	end)
+	UIS.InputChanged:Connect(function(i)
+		if resizing and i.UserInputType == Enum.UserInputType.MouseMovement then
+			local d = i.Position - rMouse
+			local vp = camera.ViewportSize
+			local nx = math.clamp(rSize.X + d.X, 520, math.min(1100, vp.X))
+			local ny = math.clamp(rSize.Y + d.Y, 300, math.min(800, vp.Y))
+			Main.Size = UDim2.fromOffset(nx, ny)
+		end
+	end)
+	UIS.InputEnded:Connect(function(i)
+		if i.UserInputType == Enum.UserInputType.MouseButton1 then resizing = false end
+	end)
+
+	task.defer(updateLayout)
+	task.defer(function()
+		task.wait(1.0)
+		local same = true
+		pcall(function() same = API.bindAccountOrReset() end)
+		if same then
+			local auto = getAuto()
+			if auto then loadCfg(auto) end
+		else
+			-- чужой аккаунт: настройки не грузим
+			pcall(function()
+				showAchievement("Account", "другой акк · cfg не загружен")
+			end)
+		end
+		-- закрепить текущего владельца после старта
+		pcall(function() API.setSavedOwner(tostring(player.UserId) .. "|" .. tostring(player.Name)) end)
+	end)
 end
-Content:GetPropertyChangedSignal("AbsoluteSize"):Connect(updateLayout)
-Main:GetPropertyChangedSignal("AbsoluteSize"):Connect(updateLayout)
-
-local Resize = Instance.new("TextButton", Main)
-Resize.Size = UDim2.fromOffset(18, 18)
-Resize.Position = UDim2.new(1, -18, 1, -18)
-Resize.BackgroundColor3 = C.green
-Resize.BorderSizePixel = 0
-Resize.Text = ""
-Resize.ZIndex = 70
-Resize.Active = true
-local resizing, rMouse, rSize = false, nil, nil
-Resize.InputBegan:Connect(function(i)
-	if i.UserInputType == Enum.UserInputType.MouseButton1 then
-		resizing = true rMouse = i.Position rSize = Main.AbsoluteSize
-	end
-end)
-UIS.InputChanged:Connect(function(i)
-	if resizing and i.UserInputType == Enum.UserInputType.MouseMovement then
-		local d = i.Position - rMouse
-		local vp = camera.ViewportSize
-		local nx = math.clamp(rSize.X + d.X, 520, math.min(1100, vp.X))
-		local ny = math.clamp(rSize.Y + d.Y, 300, math.min(800, vp.Y))
-		Main.Size = UDim2.fromOffset(nx, ny)
-	end
-end)
-UIS.InputEnded:Connect(function(i)
-	if i.UserInputType == Enum.UserInputType.MouseButton1 then resizing = false end
-end)
-
-task.defer(updateLayout)
-task.defer(function()
-	task.wait(1.3)
-	local auto = getAuto()
-	if auto then loadCfg(auto) end
-end)
+initResizeAndAutoload()
